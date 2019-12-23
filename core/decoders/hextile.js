@@ -32,6 +32,10 @@ export default class HextileDecoder {
 
             let rQ = sock.rQ;
             let rQi = sock.rQi;
+            var hbyte  = 4;
+
+            if (depth == 16)
+                hbyte = 2;
 
             let subencoding = rQ[rQi];  // Peek
             if (subencoding > 30) {  // Raw
@@ -49,13 +53,13 @@ export default class HextileDecoder {
 
             // Figure out how much we are expecting
             if (subencoding & 0x01) {  // Raw
-                bytes += tw * th * 4;
+                bytes += tw * th * hbyte;
             } else {
                 if (subencoding & 0x02) {  // Background
-                    bytes += 4;
+                    bytes += hbyte;
                 }
                 if (subencoding & 0x04) {  // Foreground
-                    bytes += 4;
+                    bytes += hbyte;
                 }
                 if (subencoding & 0x08) {  // AnySubrects
                     bytes++;  // Since we aren't shifting it off
@@ -66,7 +70,7 @@ export default class HextileDecoder {
 
                     let subrects = rQ[rQi + bytes - 1];  // Peek
                     if (subencoding & 0x10) {  // SubrectsColoured
-                        bytes += subrects * (4 + 2);
+                        bytes += subrects * (hbyte + 2);
                     } else {
                         bytes += subrects * 2;
                     }
@@ -91,12 +95,18 @@ export default class HextileDecoder {
                 rQi += bytes - 1;
             } else {
                 if (subencoding & 0x02) {  // Background
-                    this._background = [rQ[rQi], rQ[rQi + 1], rQ[rQi + 2], rQ[rQi + 3]];
-                    rQi += 4;
+                    if (depth == 16)
+                        this._background = [rQ[rQi], rQ[rQi + 1]];
+                    else
+                        this._background = [rQ[rQi], rQ[rQi + 1], rQ[rQi + 2], rQ[rQi + 3]];
+                    rQi += hbyte;
                 }
                 if (subencoding & 0x04) {  // Foreground
-                    this._foreground = [rQ[rQi], rQ[rQi + 1], rQ[rQi + 2], rQ[rQi + 3]];
-                    rQi += 4;
+                    if (depth == 16)
+                        this._foreground = [rQ[rQi], rQ[rQi + 1]];
+                    else
+                        this._foreground = [rQ[rQi], rQ[rQi + 1], rQ[rQi + 2], rQ[rQi + 3]];
+                    rQi += hbyte;
                 }
 
                 display.startTile(tx, ty, tw, th, this._background);
@@ -107,8 +117,12 @@ export default class HextileDecoder {
                     for (let s = 0; s < subrects; s++) {
                         let color;
                         if (subencoding & 0x10) {  // SubrectsColoured
-                            color = [rQ[rQi], rQ[rQi + 1], rQ[rQi + 2], rQ[rQi + 3]];
-                            rQi += 4;
+                            if (depth == 16)
+                                color = [rQ[rQi], rQ[rQi + 1]];
+                            else
+                                color = [rQ[rQi], rQ[rQi + 1], rQ[rQi + 2], rQ[rQi + 3]];
+
+                            rQi += hbyte;
                         } else {
                             color = this._foreground;
                         }

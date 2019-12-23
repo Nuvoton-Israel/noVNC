@@ -70,6 +70,7 @@ export default class Display {
 
         // ===== PROPERTIES =====
 
+        this._fb_depth = 24;
         this._scale = 1.0;
         this._clipViewport = false;
 
@@ -388,9 +389,18 @@ export default class Display {
             this._tile = this._drawCtx.createImageData(width, height);
         }
 
-        const red = color[2];
-        const green = color[1];
-        const blue = color[0];
+        var red, green, blue;
+
+        if (this._fb_depth == 16) {
+            var rgb16 = color[0] + (color[1] << 8);
+            red = (rgb16 & 0xf800) >> 8;
+            green = (rgb16 & 0x07e0) >> 3;
+            blue = (rgb16 & 0x001f) << 3;
+        } else {
+            red = color[2];
+            green = color[1];
+            blue = color[0];
+        }
 
         const data = this._tile.data;
         for (let i = 0; i < width * height * 4; i += 4) {
@@ -403,9 +413,19 @@ export default class Display {
 
     // update sub-rectangle of the current tile
     subTile(x, y, w, h, color) {
-        const red = color[2];
-        const green = color[1];
-        const blue = color[0];
+        var red, green, blue;
+
+        if (this._fb_depth == 16) {
+            var rgb16 = color[0] + (color[1] << 8);
+            red = (rgb16 & 0xf800) >> 8;
+            green = (rgb16 & 0x07e0) >> 3;
+            blue = (rgb16 & 0x001f) << 3;
+        } else {
+            red = color[2];
+            green = color[1];
+            blue = color[0];
+        }
+
         const xend = x + w;
         const yend = y + h;
 
@@ -537,7 +557,20 @@ export default class Display {
     }
 
     _setFillColor(color) {
-        const newStyle = 'rgb(' + color[2] + ',' + color[1] + ',' + color[0] + ')';
+        var red, green, blue;
+
+        if (this._fb_depth == 16) {
+            var rgb16 = color[0] + (color[1] << 8);
+            red = (rgb16 & 0xf800) >> 8;
+            green = (rgb16 & 0x07e0) >> 3;
+            blue = (rgb16 & 0x001f) << 3;
+        } else {
+            red = color[2];
+            green = color[1];
+            blue = color[0];
+        }
+
+        var newStyle = 'rgb(' + red + ',' + green + ',' + blue + ')';
         if (newStyle !== this._prevDrawStyle) {
             this._drawCtx.fillStyle = newStyle;
             this._prevDrawStyle = newStyle;
@@ -560,11 +593,23 @@ export default class Display {
     _bgrxImageData(x, y, width, height, arr, offset) {
         const img = this._drawCtx.createImageData(width, height);
         const data = img.data;
-        for (let i = 0, j = offset; i < width * height * 4; i += 4, j += 4) {
-            data[i]     = arr[j + 2];
-            data[i + 1] = arr[j + 1];
-            data[i + 2] = arr[j];
-            data[i + 3] = 255;  // Alpha
+
+        if (this._fb_depth == 16) {
+            for (var i = 0, j = offset; i < width * height * 4; i += 4, j += 2) {
+                var rgb16 = arr[j] + (arr[j + 1] << 8);
+
+                data[i]     = (rgb16 & 0xf800) >> 8;
+                data[i + 1] = (rgb16 & 0x07e0) >> 3;
+                data[i + 2] = (rgb16 & 0x001f) << 3;
+                data[i + 3] = 255;  // Alpha
+            }
+        } else {
+            for (var i = 0, j = offset; i < width * height * 4; i += 4, j += 4) {
+                data[i]     = arr[j + 2];
+                data[i + 1] = arr[j + 1];
+                data[i + 2] = arr[j];
+                data[i + 3] = 255;  // Alpha
+            }
         }
         this._drawCtx.putImageData(img, x, y);
         this._damage(x, y, img.width, img.height);
