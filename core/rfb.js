@@ -2127,6 +2127,11 @@ export default class RFB extends EventTargetMixin {
             this._fbDepth = 8;
         }
 
+        if (this._fbName === "OpenBMC IKVM" || this._fbName === "obmc iKVM") {
+            Log.Warn("NPCM Hextile supports 16 bit depths. Using low color mode.");
+            this._fbDepth = 16;
+        }
+
         RFB.messages.pixelFormat(this._sock, this._fbDepth, true);
         this._sendEncodings();
         RFB.messages.fbUpdateRequest(this._sock, false, 0, 0, this._fbWidth, this._fbHeight);
@@ -2146,9 +2151,13 @@ export default class RFB extends EventTargetMixin {
             encs.push(encodings.encodingTightPNG);
             encs.push(encodings.encodingZRLE);
             encs.push(encodings.encodingJPEG);
-            encs.push(encodings.encodingHextile);
             encs.push(encodings.encodingRRE);
         }
+
+        if (this._fbDepth >= 16) {
+            encs.push(encodings.encodingHextile);
+        }
+
         encs.push(encodings.encodingRaw);
 
         // Psuedo-encoding settings
@@ -3281,6 +3290,13 @@ RFB.messages = {
         buff[offset + 17] = 0;   // padding
         buff[offset + 18] = 0;   // padding
         buff[offset + 19] = 0;   // padding
+
+        // adjust green-max, red-shift and blue-shift for rgb565
+        if (depth == 16) {
+            buff[offset + 11] = (1 << 6) - 1;  // green-max
+            buff[offset + 14] = 11;  // red-shift
+            buff[offset + 16] = 0;  // blue-shift
+        }
 
         sock._sQlen += 20;
         sock.flush();
