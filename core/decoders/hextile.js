@@ -34,6 +34,11 @@ export default class HextileDecoder {
             let rQ = sock.rQ;
             let rQi = sock.rQi;
 
+            let bpp = 4;  // Bytes per pixel
+            if (depth == 16) {
+                bpp = 2;
+            }
+
             let subencoding = rQ[rQi];  // Peek
             if (subencoding > 30) {  // Raw
                 throw new Error("Illegal hextile subencoding (subencoding: " +
@@ -50,13 +55,13 @@ export default class HextileDecoder {
 
             // Figure out how much we are expecting
             if (subencoding & 0x01) {  // Raw
-                bytes += tw * th * 4;
+                bytes += tw * th * bpp;
             } else {
                 if (subencoding & 0x02) {  // Background
-                    bytes += 4;
+                    bytes += bpp;
                 }
                 if (subencoding & 0x04) {  // Foreground
-                    bytes += 4;
+                    bytes += bpp;
                 }
                 if (subencoding & 0x08) {  // AnySubrects
                     bytes++;  // Since we aren't shifting it off
@@ -67,7 +72,7 @@ export default class HextileDecoder {
 
                     let subrects = rQ[rQi + bytes - 1];  // Peek
                     if (subencoding & 0x10) {  // SubrectsColoured
-                        bytes += subrects * (4 + 2);
+                        bytes += subrects * (bpp + 2);
                     } else {
                         bytes += subrects * 2;
                     }
@@ -88,21 +93,26 @@ export default class HextileDecoder {
                     display.fillRect(tx, ty, tw, th, this._background);
                 }
             } else if (subencoding & 0x01) {  // Raw
-                let pixels = tw * th;
-                // Max sure the image is fully opaque
-                for (let i = 0;i <  pixels;i++) {
-                    rQ[rQi + i * 4 + 3] = 255;
-                }
-                display.blitImage(tx, ty, tw, th, rQ, rQi);
+                this._blitImage(tx, ty, tw, th, rQ, rQi, display, depth);
                 rQi += bytes - 1;
             } else {
                 if (subencoding & 0x02) {  // Background
-                    this._background = [rQ[rQi], rQ[rQi + 1], rQ[rQi + 2], rQ[rQi + 3]];
-                    rQi += 4;
+                    if (depth == 16) {
+                        this._background = this._extractRgb565([rQ[rQi], rQ[rQi + 1]]);
+                    } else {
+                        this._background = [rQ[rQi], rQ[rQi + 1], rQ[rQi + 2], rQ[rQi + 3]];
+                    }
+
+                    rQi += bpp;
                 }
                 if (subencoding & 0x04) {  // Foreground
-                    this._foreground = [rQ[rQi], rQ[rQi + 1], rQ[rQi + 2], rQ[rQi + 3]];
-                    rQi += 4;
+                    if (depth == 16) {
+                        this._foreground = this._extractRgb565([rQ[rQi], rQ[rQi + 1]]);
+                    } else {
+                        this._foreground = [rQ[rQi], rQ[rQi + 1], rQ[rQi + 2], rQ[rQi + 3]];
+                    }
+
+                    rQi += bpp;
                 }
 
                 this._startTile(tx, ty, tw, th, this._background);
@@ -113,8 +123,13 @@ export default class HextileDecoder {
                     for (let s = 0; s < subrects; s++) {
                         let color;
                         if (subencoding & 0x10) {  // SubrectsColoured
-                            color = [rQ[rQi], rQ[rQi + 1], rQ[rQi + 2], rQ[rQi + 3]];
-                            rQi += 4;
+                            if (depth == 16) {
+                                color = this._extractRgb565([rQ[rQi], rQ[rQi + 1]]);
+                            } else {
+                                color = [rQ[rQi], rQ[rQi + 1], rQ[rQi + 2], rQ[rQi + 3]];
+                            }
+
+                            rQi += bpp;
                         } else {
                             color = this._foreground;
                         }
@@ -187,5 +202,43 @@ export default class HextileDecoder {
         display.blitImage(this._tileX, this._tileY,
                           this._tileW, this._tileH,
                           this._tileBuffer, 0);
+    }
+
+    _blitImage(x, y, width, height, arr, offset, display, depth) {
+        let pixels = width * height;
+
+        if (depth == 16) {
+            const newArr = new Uint8Array(pixels * 4);
+
+            for (let i = 0, j = offset; i < pixels * 4; i += 4, j += 2) {
+                let color = this._extractRgb565([arr[j], arr[j + 1]]);
+
+                newArr[i]     = color[0];  // Red
+                newArr[i + 1] = color[1];  // Green
+                newArr[i + 2] = color[2];  // Blue
+                newArr[i + 3] = 255;       // Alpha
+            }
+
+            display.blitImage(x, y, width, height, newArr, 0);
+        } else {
+            // Make sure the image is fully opaque
+            for (let i = 0; i < pixels; i++) {
+                arr[offset + i * 4 + 3] = 255;
+            }
+
+            display.blitImage(x, y, width, height, arr, offset);
+        }
+    }
+
+    // extract color components of rgb565
+    _extractRgb565(color) {
+        let rgb565 = color[0] + (color[1] << 8);
+        let red, green, blue;
+
+        red = (rgb565 & 0xf800) >> 8;
+        green = (rgb565 & 0x07e0) >> 3;
+        blue = (rgb565 & 0x001f) << 3;
+
+        return [red, green, blue];
     }
 }
