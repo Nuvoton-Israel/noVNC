@@ -1767,8 +1767,10 @@ export default class RFB extends EventTargetMixin {
             encs.push(encodings.encodingRRE);
         }
 
-        if (this._fbDepth >= 16)
+        if (this._fbDepth >= 16) {
             encs.push(encodings.encodingHextile);
+            encs.push(encodings.pseudoEncodingCursor);
+        }
 
         encs.push(encodings.encodingRaw);
 
@@ -1788,7 +1790,6 @@ export default class RFB extends EventTargetMixin {
 
         if (this._fbDepth == 24) {
             encs.push(encodings.pseudoEncodingVMwareCursor);
-            encs.push(encodings.pseudoEncodingCursor);
         }
 
         RFB.messages.clientEncodings(this._sock, encs);
@@ -2335,13 +2336,32 @@ export default class RFB extends EventTargetMixin {
         return true;
     }
 
+    // extract color components of rgb565
+    _extractRgb565(color) {
+        let rgb565 = color[0] + (color[1] << 8);
+        let red, green, blue;
+
+        red = (rgb565 & 0xf800) >> 8;
+        green = (rgb565 & 0x07e0) >> 3;
+        blue = (rgb565 & 0x001f) << 3;
+
+        return [red, green, blue];
+    }
+
     _handleCursor() {
         const hotx = this._FBU.x;  // hotspot-x
         const hoty = this._FBU.y;  // hotspot-y
         const w = this._FBU.width;
         const h = this._FBU.height;
+        var bytesPerPix;
 
-        const pixelslength = w * h * 4;
+        if (this._fbDepth == 16) {
+            bytesPerPix = 2;
+        } else {
+            bytesPerPix = 4;
+        }
+
+        const pixelslength = w * h * bytesPerPix;
         const masklength = Math.ceil(w / 8) * h;
 
         let bytes = pixelslength + masklength;
@@ -2355,14 +2375,27 @@ export default class RFB extends EventTargetMixin {
         let rgba = new Uint8Array(w * h * 4);
 
         let pixIdx = 0;
+        let dep16Idx = 0;
+
         for (let y = 0; y < h; y++) {
             for (let x = 0; x < w; x++) {
                 let maskIdx = y * Math.ceil(w / 8) + Math.floor(x / 8);
                 let alpha = (mask[maskIdx] << (x % 8)) & 0x80 ? 255 : 0;
-                rgba[pixIdx    ] = pixels[pixIdx + 2];
-                rgba[pixIdx + 1] = pixels[pixIdx + 1];
-                rgba[pixIdx + 2] = pixels[pixIdx];
-                rgba[pixIdx + 3] = alpha;
+
+                if (this._fbDepth == 16) {
+                    let color = this._extractRgb565([pixels[dep16Idx], pixels[dep16Idx + 1]]);
+                    rgba[pixIdx    ] = color[0];
+                    rgba[pixIdx + 1] = color[1];
+                    rgba[pixIdx + 2] = color[2];
+                    rgba[pixIdx + 3] = alpha;
+
+                    dep16Idx += 2;
+                } else {
+                    rgba[pixIdx    ] = pixels[pixIdx + 2];
+                    rgba[pixIdx + 1] = pixels[pixIdx + 1];
+                    rgba[pixIdx + 2] = pixels[pixIdx];
+                    rgba[pixIdx + 3] = alpha;
+                }
                 pixIdx += 4;
             }
         }
